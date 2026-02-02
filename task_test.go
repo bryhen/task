@@ -25,12 +25,12 @@ func TestContinuousTask(t *testing.T) {
 		fmt.Println("Exit at ", time.Now().UnixMilli())
 	}()
 
-	rep, err := tsk.Report()
+	rep, err := tsk.Payload()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = tsk.Report()
+	_, err = tsk.Payload()
 	if err == nil {
 		t.Fatal(fmt.Errorf("expected err"))
 	}

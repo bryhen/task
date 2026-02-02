@@ -8,11 +8,11 @@ import (
 
 var (
 	ErrNotStarted = fmt.Errorf("not started")
-	ErrDupStart   = fmt.Errorf("duplicate start")
+	ErrDupStart   = fmt.Errorf("duplicate call to start")
 
 	ErrWasShutdown = fmt.Errorf("previously shutdown")
 
-	ErrDupReport = fmt.Errorf("duplicate report")
+	ErrDupPayload = fmt.Errorf("duplicate call to payload")
 )
 
 type Tasker[T any] interface {
@@ -46,7 +46,7 @@ type Task[T any] struct {
 //
 // Calls tasker.Do() in a separate goroutine.
 //
-// When your tasker's Do() returns, its payload will be available through Report() (Report() also blocks and can be used to await task completion).
+// When your tasker's Do() returns, its payload will be available through Payload() (Payload() also blocks and can be used to await task completion).
 func (t *Task[T]) Start(ctx context.Context) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -132,11 +132,11 @@ func (t *Task[T]) ExitCh() <-chan struct{} {
 
 // Blocks until the task finishes and provides its payload.
 //
-// This function will ONLY provide the report once. Subsequent calls will return an error.
-func (t *Task[T]) Report() (T, error) {
+// This function will ONLY provide the payload once. Subsequent calls will return an error.
+func (t *Task[T]) Payload() (T, error) {
 	t.mu.Lock()
 	if t.notified {
-		return *new(T), ErrDupReport
+		return *new(T), ErrDupPayload
 	}
 	t.notified = true
 	t.mu.Unlock()
