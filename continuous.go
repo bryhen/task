@@ -26,7 +26,7 @@ type ContinuousTaskReport[T any] struct {
 
 // Performs the steps in order.
 // Calls Setup(), if an error occurs, returns early without running Do().
-// Calls Do() at each interval (or no interval if the interval is 0). After Shutdown() or Done() is called by the parent task, it calls Teardown(), writing and returning data in the returned report.
+// Calls Do() at each interval (or no interval if the interval is 0). After Shutdown() or Done() is called by the parent task, it exits Do() and calls Teardown(), writing and returning data in the returned report.
 func (c *continuous[T]) Do() *ContinuousTaskReport[T] {
 	ctr := &ContinuousTaskReport[T]{}
 
@@ -40,15 +40,28 @@ func (c *continuous[T]) Do() *ContinuousTaskReport[T] {
 
 		// Only check exitOnErr at top
 		if c.exitOnErr {
-			for ; c.task.KeepRunning(); <-tck.C {
+		Loop1:
+			for {
 				if err := c.steps.Do(); err != nil {
 					ctr.ErrDo = err
-					break
+					break Loop1
+				}
+
+				select {
+				case <-c.task.exit:
+					break Loop1
+				case <-tck.C:
 				}
 			}
 		} else {
-			for ; c.task.KeepRunning(); <-tck.C {
+		Loop2:
+			for {
 				c.steps.Do()
+				select {
+				case <-c.task.exit:
+					break Loop2
+				case <-tck.C:
+				}
 			}
 		}
 		tck.Stop()
@@ -75,15 +88,18 @@ func (c *continuous[T]) Do() *ContinuousTaskReport[T] {
 	return ctr
 }
 
-func NewIntervalTask[T any](steps Stepper[T], interval time.Duration, exitOnErr bool) *Task[*ContinuousTaskReport[T]] {
+// If an interval is provided, this task will run in an interval set to that duration. (ie time.Second will call task's Do() at most once per second.)
+func NewContinuousTask[T any](steps Stepper[T], exitOnErr bool, interval ...time.Duration) *Task[*ContinuousTaskReport[T]] {
 	ctr := &continuous[T]{
-		interval:  interval,
 		steps:     steps,
 		exitOnErr: exitOnErr,
 	}
 
-	tsk := NewTask(ctr)
-	ctr.task = tsk
+	if len(interval) > 0 {
+		ctr.interval = interval[0]
+	}
 
-	return tsk
+	ctr.task = NewTask(ctr)
+
+	return ctr.task
 }
