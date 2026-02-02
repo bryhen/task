@@ -2,17 +2,17 @@ package task
 
 import "time"
 
-type Steps[T any] interface {
+type Stepper[T any] interface {
 	Setup() error
 	Do() error
 	Teardown() (T, error) // Can return any relevant data here
 }
 
-type Continuous[T any] struct {
+type continuous[T any] struct {
 	task *Task[*ContinuousTaskReport[T]]
 
 	interval time.Duration
-	steps    Steps[T]
+	steps    Stepper[T]
 
 	exitOnErr bool
 }
@@ -20,14 +20,14 @@ type Continuous[T any] struct {
 type ContinuousTaskReport[T any] struct {
 	Payload     T
 	ErrSetup    error
-	ErrTeardown error
 	ErrDo       error // Will not be recorded unless exitOnErr is true.
+	ErrTeardown error
 }
 
 // Performs the steps in order.
 // Calls Setup(), if an error occurs, returns early without running Do().
 // Calls Do() at each interval (or no interval if the interval is 0). After Shutdown() or Done() is called by the parent task, it calls Teardown(), writing and returning data in the returned report.
-func (c *Continuous[T]) Do() *ContinuousTaskReport[T] {
+func (c *continuous[T]) Do() *ContinuousTaskReport[T] {
 	ctr := &ContinuousTaskReport[T]{}
 
 	if ctr.ErrSetup = c.steps.Setup(); ctr.ErrSetup != nil {
@@ -75,8 +75,8 @@ func (c *Continuous[T]) Do() *ContinuousTaskReport[T] {
 	return ctr
 }
 
-func NewIntervalTask[T any](steps Steps[T], interval time.Duration, exitOnErr bool) *Task[*ContinuousTaskReport[T]] {
-	ctr := &Continuous[T]{
+func NewIntervalTask[T any](steps Stepper[T], interval time.Duration, exitOnErr bool) *Task[*ContinuousTaskReport[T]] {
+	ctr := &continuous[T]{
 		interval:  interval,
 		steps:     steps,
 		exitOnErr: exitOnErr,

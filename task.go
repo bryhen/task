@@ -10,8 +10,7 @@ var (
 	ErrNotStarted = fmt.Errorf("not started")
 	ErrDupStart   = fmt.Errorf("duplicate start")
 
-	ErrWasShutdown = fmt.Errorf("already shutdown")
-	ErrDupShutdown = fmt.Errorf("duplicate shutdown")
+	ErrWasShutdown = fmt.Errorf("previously shutdown")
 )
 
 type Tasker[T any] interface {
@@ -31,8 +30,8 @@ type Task[T any] struct {
 	done   chan struct{}
 	notify chan T
 
-	started  bool
-	shutdown bool
+	started     bool
+	keepRunning bool
 }
 
 // May only be called once.
@@ -44,7 +43,7 @@ func (t *Task[T]) Start(ctx context.Context) (<-chan T, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if t.shutdown {
+	if !t.keepRunning {
 		return nil, ErrWasShutdown
 	}
 
@@ -63,6 +62,11 @@ func (t *Task[T]) Start(ctx context.Context) (<-chan T, error) {
 	return t.notify, nil
 }
 
+// Allows a task to exit since it has been marked as Done.
+func (t *Task[T]) Done() {
+	t.keepRunning = false
+}
+
 // Shuts down a task.
 //
 // If a task has already returned its *TaskReport via the channel returned by Start(),
@@ -71,16 +75,11 @@ func (t *Task[T]) Start(ctx context.Context) (<-chan T, error) {
 // Shutdown is meant to help gracefully shutdown currently running tasks.
 func (t *Task[T]) Shutdown(ctx context.Context) error {
 	t.mu.Lock()
-
 	if !t.started {
 		t.mu.Unlock()
 		return ErrNotStarted
-	} else if t.shutdown {
-		t.mu.Unlock()
-		return ErrDupShutdown
 	}
-
-	t.shutdown = true
+	t.keepRunning = false
 	t.mu.Unlock()
 
 	select {
@@ -92,14 +91,15 @@ func (t *Task[T]) Shutdown(ctx context.Context) error {
 }
 
 func (t *Task[T]) KeepRunning() bool {
-	return !t.shutdown
+	return t.keepRunning
 }
 
 func NewTask[T any](proc Tasker[T]) *Task[T] {
 	return &Task[T]{
-		mu:     &sync.Mutex{},
-		t:      proc,
-		done:   make(chan struct{}),
-		notify: make(chan T, 1),
+		mu:          &sync.Mutex{},
+		t:           proc,
+		done:        make(chan struct{}),
+		notify:      make(chan T, 1),
+		keepRunning: true,
 	}
 }
